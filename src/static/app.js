@@ -24,8 +24,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const participantsHtml = (details.participants && details.participants.length > 0)
           ? `<div class="participants"><strong>Participants</strong><ul>${details.participants
-              .map((p) => `<li>${p}</li>`)
-              .join("")}</ul></div>`
+            .map((p) => `<li><span class="participant-email">${p}</span><button class="remove-participant" data-activity="${encodeURIComponent(name)}" data-email="${encodeURIComponent(p)}" aria-label="Remove ${p}">×</button></li>`)
+            .join("")}</ul></div>`
           : `<div class="participants empty"><em>No participants yet</em></div>`;
 
         activityCard.innerHTML = `
@@ -58,6 +58,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = document.getElementById("activity").value;
 
     try {
+      // disable submit while request is in flight
+      const submitBtn = signupForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
       const response = await fetch(
         `/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`,
         {
@@ -72,10 +75,13 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.className = "success";
         signupForm.reset();
         // Refresh activities to reflect new participant immediately
-        fetchActivities();
+        await fetchActivities();
+        // re-enable submit
+        if (submitBtn) submitBtn.disabled = false;
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
+        if (submitBtn) submitBtn.disabled = false;
       }
 
       messageDiv.classList.remove("hidden");
@@ -89,6 +95,48 @@ document.addEventListener("DOMContentLoaded", () => {
       messageDiv.className = "error";
       messageDiv.classList.remove("hidden");
       console.error("Error signing up:", error);
+    }
+  });
+
+  // Delegate click for remove participant buttons
+  activitiesList.addEventListener("click", async (e) => {
+    const btn = e.target.closest && e.target.closest(".remove-participant");
+    if (!btn) return;
+
+    const activity = decodeURIComponent(btn.dataset.activity || "");
+    const email = decodeURIComponent(btn.dataset.email || "");
+
+    if (!activity || !email) return;
+
+    if (!confirm(`Unregister ${email} from ${activity}?`)) return;
+
+    try {
+      // disable the button while processing
+      btn.disabled = true;
+      const response = await fetch(`/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        messageDiv.textContent = result.message;
+        messageDiv.className = "success";
+        messageDiv.classList.remove("hidden");
+        // Refresh list and re-enable button after
+        await fetchActivities();
+        setTimeout(() => messageDiv.classList.add("hidden"), 4000);
+      } else {
+        messageDiv.textContent = result.detail || "Failed to unregister";
+        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden");
+        btn.disabled = false;
+      }
+    } catch (err) {
+      console.error("Error unregistering:", err);
+      messageDiv.textContent = "Failed to unregister. Try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      btn.disabled = false;
     }
   });
 
